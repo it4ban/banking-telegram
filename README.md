@@ -22,13 +22,7 @@ Cloudflare Tunnel, который пробрасывает локальный Vi
 **Windows** (через winget):
 
 ```powershell
-winget install --id Cloudflare.cloudflared
-```
-
-Или через Chocolatey:
-
-```powershell
-choco install cloudflared
+winget install -e --id Cloudflare.cloudflared
 ```
 
 **macOS** (через Homebrew):
@@ -60,10 +54,10 @@ https://random-words-1234.trycloudflare.com
 
 ## Полезные команды
 
-| Действие | Команда |
-| --- | --- |
-| Поднять контейнеры | `docker compose up -d --build` |
-| Остановить контейнеры | `docker compose down` |
-| Перезапустить фронтенд | `docker compose restart nodejs` |
-| Установить npm-пакет | `docker compose exec nodejs npm install <пакет>` |
-| Логи фронтенда | `docker compose logs -f nodejs` |
+| Действие               | Команда                                          |
+| ---------------------- | ------------------------------------------------ |
+| Поднять контейнеры     | `docker compose up -d --build`                   |
+| Остановить контейнеры  | `docker compose down`                            |
+| Перезапустить фронтенд | `docker compose restart nodejs`                  |
+| Установить npm-пакет   | `docker compose exec nodejs npm install <пакет>` |
+| Логи фронтенда         | `docker compose logs -f nodejs`                  |
