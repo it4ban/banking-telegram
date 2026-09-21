@@ -1,5 +1,9 @@
 FROM php:8.5-fpm-bookworm
 
+# unzip/git нужны Composer для скачивания и распаковки пакетов
+RUN apt-get update && apt-get install -y --no-install-recommends unzip git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Composer (копируем готовый бинарник из официального образа)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

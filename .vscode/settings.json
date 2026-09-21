@@ -1,0 +1,10 @@
+{
+	"sqlfluff.dialect": "postgres",
+	"sqlfluff.linter.run": "onType",
+	"sqlfluff.linter.diagnosticSeverity": "warning",
+	"sqlfluff.format.enabled": true,
+	"[sql]": {
+		"editor.defaultFormatter": "sqlfluff.vscode-sqlfluff",
+		"editor.formatOnSave": true
+	}
+}
