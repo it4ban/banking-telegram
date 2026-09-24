@@ -78,11 +78,54 @@ Repository работает через PDO напрямую (без ORM) — э�
 
 ## Схема БД (PostgreSQL)
 
-- `users`: id, telegram_id (unique), username, first_name, created_at
-- `cards`: id, user_id (FK), lithic_card_token (id карты в Lithic), last_four, state (OPEN/PAUSED/CLOSED), spend_limit, created_at
-- `transactions`: id, card_id (FK), lithic_transaction_token, amount, merchant, status, created_at
+Миграции — простые `.sql`-файлы (`backend/Database/migrations/`), применяются вручную/скриптом `php backend/Database/migrate.php` (без миграционного фреймворка, чтобы не тащить лишнее).
 
-Миграции — простые `.sql`-файлы, применяются вручную/скриптом `php backend/Database/migrate.php` (без миграционного фреймворка, чтобы не тащить лишнее).
+### `users` ([001_create_users.sql](../backend/Database/migrations/001_create_users.sql))
+
+| Колонка | Тип | Назначение |
+|---|---|---|
+| `id` | `uuid`, PK, `DEFAULT uuidv4()` | Внутренний идентификатор пользователя в нашей БД. |
+| `telegram_id` | `bigint`, `UNIQUE NOT NULL` | ID пользователя в Telegram (из `initData`/апдейтов бота). По нему находим/создаём пользователя при первом обращении — это естественный внешний идентификатор личности, `bigint`, т.к. Telegram ID превышает диапазон `int`. |
+| `username` | `varchar(255)`, nullable | Telegram-юзернейм (`@username`), может отсутствовать — не у всех пользователей он задан. |
+| `first_name` | `varchar(255)`, nullable | Имя из профиля Telegram, для приветствий/UI. |
+| `last_name` | `varchar(255)`, nullable | Фамилия из профиля Telegram, часто отсутствует. |
+| `status` | `user_status` enum (`active`/`blocked`), `NOT NULL DEFAULT 'active'` | Может ли пользователь пользоваться сервисом. При переводе в `blocked` необходимо на уровне `UserService` также закрыть/приостановить его карты (см. ниже) — это бизнес-логика, а не каскад на уровне БД, так как требует ещё и вызова Lithic API. |
+| `avatar_url` | `text`, nullable | Ссылка на аватар из Telegram, для UI. |
+| `created_at` | `timestamptz`, `DEFAULT now()` | Когда пользователь впервые зарегистрировался. |
+| `updated_at` | `timestamptz`, `DEFAULT now()` | Когда запись последний раз менялась (смена статуса, данных профиля). |
+
+### `cards` ([002_create_cards.sql](../backend/Database/migrations/002_create_cards.sql))
+
+| Колонка | Тип | Назначение |
+|---|---|---|
+| `id` | `uuid`, PK, `DEFAULT uuidv4()` | Внутренний идентификатор карты. |
+| `user_id` | `uuid`, `NOT NULL`, FK → `users.id` `ON DELETE RESTRICT` | Владелец карты. `NOT NULL` + `RESTRICT` намеренно: карта не может существовать без владельца, а удаление пользователя с активными картами блокируется на уровне БД, пока карты не будут явно закрыты через сервисный слой (см. "Владение картой" ниже). |
+| `lithic_card_token` | `text NOT NULL` | Идентификатор этой же карты в Lithic. Источник истины по чувствительным данным карты (полный PAN, CVV) — Lithic, не наша БД; этот токен — мостик к нему для запросов к Lithic API. |
+| `last_four` | `varchar(4) NOT NULL` | Последние 4 цифры номера карты — единственный фрагмент номера, который храним у себя, для отображения в UI ("•••• 4242"), без риска хранить PCI-чувствительные данные. |
+| `state` | `card_state` enum (`open`/`paused`/`closed`), `NOT NULL DEFAULT 'open'` | Статус карты: `open` — активна, можно платить; `paused` — временно приостановлена; `closed` — закрыта навсегда. Отражает (и должно синхронизироваться с) статус карты в Lithic. |
+| `daily_limit` | `numeric(10,2) NOT NULL DEFAULT 0`, `CHECK (>= 0)` | Дневной лимит трат по карте, задаётся при выпуске через Lithic API и кэшируется здесь для UI. `numeric`, а не `float`, чтобы избежать ошибок округления денежных сумм. |
+| `monthly_limit` | `numeric(10,2) NOT NULL DEFAULT 0`, `CHECK (>= 0)` | Месячный лимит трат, аналогично `daily_limit`. |
+| `created_at` | `timestamptz`, `DEFAULT now()` | Когда карта была выпущена. |
+| `updated_at` | `timestamptz`, `DEFAULT now()` | Когда карта последний раз менялась (смена статуса, лимитов). |
+
+Индекс `idx_cards_user_id` — ускоряет выборку "все карты пользователя" (`GET /api/cards`).
+
+**Владение картой:** карта закрепляется за пользователем навсегда и не передаётся другому — иначе новый владелец увидел бы в истории карты чужие транзакции (`transactions.card_id` не разделяет периоды владения). При блокировке пользователя его карты переводятся в `paused`/`closed` силами `UserService`/`CardIssuingService` (со звонком в Lithic API на закрытие), а не автоматическим каскадом в БД. Жёсткое удаление пользователя (`DELETE FROM users`) — редкий сценарий (основной механизм — блокировка навсегда); `ON DELETE RESTRICT` заставляет explicitly закрыть все карты пользователя до того, как его можно будет удалить, не оставляя "бесхозных" карт с обнулённым `user_id`.
+
+### `transactions` ([003_create_transactions.sql](../backend/Database/migrations/003_create_transactions.sql))
+
+| Колонка | Тип | Назначение |
+|---|---|---|
+| `id` | `uuid`, PK, `DEFAULT uuidv4()` | Внутренний идентификатор транзакции. |
+| `card_id` | `uuid NOT NULL`, FK → `cards.id` `ON DELETE CASCADE` | К какой карте относится транзакция. `CASCADE` здесь уместен (в отличие от `cards.user_id`): если карта удаляется физически, её транзакции — не самостоятельная сущность, а история именно этой карты, смысла в них без карты нет. |
+| `lithic_transaction_token` | `text NOT NULL` | Идентификатор транзакции в Lithic — по нему сверяем/дозапрашиваем детали и сопоставляем вебхуки с записью у себя. |
+| `amount` | `numeric(10,2) NOT NULL DEFAULT 0`, `CHECK (>= 0)` | Сумма транзакции. `numeric` вместо `float` — обязательное правило для денег. |
+| `merchant` | `varchar(255) DEFAULT 'unknown'` | Название/идентификатор продавца, приходит от Lithic при авторизации операции. |
+| `status` | `transaction_state` enum (`approved`/`declined`/`pending`), `NOT NULL DEFAULT 'pending'` | Статус операции, зеркалирует статус на стороне Lithic. |
+| `created_at` | `timestamptz`, `DEFAULT now()` | Когда транзакция была зафиксирована. |
+| `updated_at` | `timestamptz`, `DEFAULT now()` | Когда статус транзакции последний раз менялся (например, `pending` → `approved`). |
+
+Индекс `idx_transactions_card_id` — ускоряет выборку "история транзакций по карте" (`GET /api/cards/{id}/transactions`).
 
 ## Docker / инфраструктура
 

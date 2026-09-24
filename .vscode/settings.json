@@ -3,6 +3,7 @@
 	"sqlfluff.linter.run": "onType",
 	"sqlfluff.linter.diagnosticSeverity": "warning",
 	"sqlfluff.format.enabled": true,
+	"sqlfluff.executablePath": "C:\\Users\\kilot\\AppData\\Local\\Python\\pythoncore-3.14-64\\Scripts\\sqlfluff.exe",
 	"[sql]": {
 		"editor.defaultFormatter": "sqlfluff.vscode-sqlfluff",
 		"editor.formatOnSave": true

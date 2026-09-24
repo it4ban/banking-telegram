@@ -1,10 +1,16 @@
+CREATE TYPE user_status AS ENUM (
+    'active',
+    'blocked'
+);
+
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    telegram_id BIGINT UNIQUE NOT NULL,
-    username VARCHAR(255),
-    first_name VARCHAR(255),
-    last_name VARCHAR(255),
-    avatar_url TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    id uuid PRIMARY KEY DEFAULT uuidv4(),
+    telegram_id bigint UNIQUE NOT NULL,
+    username varchar(255),
+    first_name varchar(255),
+    last_name varchar(255),
+    status user_status NOT NULL DEFAULT 'active',
+    avatar_url text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
 );
